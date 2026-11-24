@@ -19,8 +19,7 @@ st.divider()
 # --- SIDEBAR: API KEY & SETTINGS ---
 with st.sidebar:
     st.header("⚙️ Configuration")
-    
-    # Attempt to get API key from Streamlit Secrets or Environment Variables first
+
     api_key = ""
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
@@ -32,7 +31,7 @@ with st.sidebar:
         api_key = st.text_input(
             "Enter Gemini API Key",
             type="password",
-            help="Get a free API key from Google AI Studio (aistudio.google.com)"
+            help="Get an API key from Google AI Studio (aistudio.google.com)"
         )
         if not api_key:
             st.warning("⚠️ Please enter your Gemini API Key or add `GEMINI_API_KEY` to your Streamlit Secrets.")
@@ -41,11 +40,11 @@ with st.sidebar:
     st.subheader("Model Settings")
     model_choice = st.selectbox(
         "Gemini Model",
-        options=["gemini-2.5-flash", "gemini-2.5-pro"],
+        options=["gemini-3.8-flash", "gemini-4-hydrogen", "gemini-3.5-flash-lite"],
         index=0,
-        help="Flash is faster and ideal for rapid blueprints. Pro provides deeper architectural reasoning."
+        help="gemini-3.8-flash is fast and reliable; gemini-4-hydrogen is great for coding & agentic workflows."
     )
-    
+
     st.markdown("---")
     st.caption("Built with Streamlit & Google GenAI SDK")
 
@@ -54,14 +53,14 @@ left_col, right_col = st.columns([1, 1.3], gap="large")
 
 with left_col:
     st.subheader("💡 Project Details")
-    
+
     with st.form("project_form"):
         project_idea = st.text_area(
             "Describe your software idea*",
             placeholder="e.g., A personal finance tracker that scans receipts using OCR and categorizes expenses automatically...",
             height=140
         )
-        
+
         col1, col2 = st.columns(2)
         with col1:
             skill_level = st.selectbox(
@@ -72,7 +71,7 @@ with left_col:
                 "Application Type",
                 ["Web App", "Mobile App", "CLI Tool", "AI / ML Pipeline", "API / Backend", "Desktop App", "Browser Extension"]
             )
-            
+
         with col2:
             tech_stack = st.text_input(
                 "Preferred Languages / Stack",
@@ -83,7 +82,7 @@ with left_col:
                 "Target Timeline",
                 ["Weekend Hackathon (48 hrs)", "2 Weeks", "1 Month", "3 Months (Production MVP)"]
             )
-            
+
         focus_areas = st.multiselect(
             "Include in Blueprint",
             [
@@ -101,17 +100,17 @@ with left_col:
                 "Folder & File Structure"
             ]
         )
-        
+
         submitted = st.form_submit_button("✨ Generate Project Blueprint", use_container_width=True, type="primary")
 
-# --- GENERATION LOGIC ---
+
 def generate_blueprint(key, model, idea, level, p_type, stack, time, areas):
     client = genai.Client(api_key=key)
-    
+
     areas_str = ", ".join(areas) if areas else "All standard architectural sections"
-    
+
     prompt = f"""
-    Act as a Senior Staff Software Engineer and Technical Mentor. 
+    Act as a Senior Staff Software Engineer and Technical Mentor.
     Create a comprehensive, actionable, and practical software project blueprint based on the following specifications:
 
     - **Project Idea:** {idea}
@@ -123,11 +122,11 @@ def generate_blueprint(key, model, idea, level, p_type, stack, time, areas):
 
     **Formatting & Quality Guidelines:**
     1. Tailor the complexity, libraries, and architectural patterns strictly to a **{level}** developer working within a **{time}** timeframe.
-    2. Use clear Markdown headings, bullet points, and ASCII/text-based diagrams or file trees where helpful.
+    2. Use clear Markdown headings, bullet points, and text-based diagrams or file trees where helpful.
     3. Be concrete: name specific libraries, packages, APIs, and database tables rather than giving generic advice.
     4. Keep the tone encouraging, structured, and mentor-like.
     """
-    
+
     response = client.models.generate_content(
         model=model,
         contents=prompt,
@@ -137,10 +136,11 @@ def generate_blueprint(key, model, idea, level, p_type, stack, time, areas):
     )
     return response.text
 
+
 # --- OUTPUT DISPLAY ---
 with right_col:
     st.subheader("📋 Your Project Blueprint")
-    
+
     if "blueprint" not in st.session_state:
         st.session_state.blueprint = None
 
@@ -150,7 +150,7 @@ with right_col:
         elif not project_idea.strip():
             st.warning("✍️ Please describe your project idea before generating a blueprint.")
         else:
-            with st.spinner("🧠 Architecting your project blueprint with Gemini..."):
+            with st.spinner(f"🧠 Architecting your project blueprint with {model_choice}..."):
                 try:
                     result = generate_blueprint(
                         key=api_key,
@@ -167,7 +167,6 @@ with right_col:
                     st.error(f"❌ Error communicating with Gemini API: {str(e)}")
 
     if st.session_state.blueprint:
-        # Download button at the top of the output
         st.download_button(
             label="📥 Download Blueprint (.md)",
             data=st.session_state.blueprint,
@@ -175,7 +174,7 @@ with right_col:
             mime="text/markdown",
             use_container_width=True
         )
-        
+
         with st.container(border=True):
             st.markdown(st.session_state.blueprint)
     else:
