@@ -5,92 +5,91 @@ from google import genai
 from google.genai import types
 
 
-st.set_page_config(page_title="AI Project Mentor", page_icon="🚀", layout="wide")
+# ------------------------------------------------------------
+# Page setup
+# ------------------------------------------------------------
+st.set_page_config(
+    page_title="AI Project Mentor",
+    page_icon="🚀",
+    layout="wide",
+)
+
+st.title("🚀 AI Project Mentor")
+st.write(
+    "Turn your software idea into a practical project blueprint "
+    "with help from Google Gemini."
+)
 
 
-def get_api_key():
+# ------------------------------------------------------------
+# Gemini configuration
+# ------------------------------------------------------------
+def load_api_key():
+    """Load the API key from Streamlit Secrets or environment variables."""
     try:
-        key_from_secrets = st.secrets.get("GEMINI_API_KEY", "")
+        secrets_key = st.secrets.get("GEMINI_API_KEY", "")
     except Exception:
-        key_from_secrets = ""
-    return key_from_secrets or os.getenv("GEMINI_API_KEY", "")
+        secrets_key = ""
+
+    environment_key = os.getenv("GEMINI_API_KEY", "")
+    return secrets_key or environment_key
 
 
-def generate_blueprint(api_key, idea, skill, language, time_available, interests, extra):
+def create_project_blueprint(
+    api_key,
+    project_idea,
+    skill_level,
+    programming_language,
+    available_time,
+    domain,
+    extra_requirements,
+):
+    """Ask Gemini to create a detailed software project plan."""
     client = genai.Client(api_key=api_key)
 
     prompt = f"""
-You are AI Project Mentor. Create a realistic, beginner-friendly software project blueprint.
+You are an experienced software project mentor.
+Create a realistic, useful, and achievable project blueprint.
 
-User details:
-- Project idea: {idea}
-- Skill level: {skill}
-- Preferred language: {language}
-- Time available: {time_available}
-- Interests: {interests or "Not specified"}
-- Extra requirements: {extra or "None"}
+PROJECT DETAILS
+Project idea: {project_idea}
+Skill level: {skill_level}
+Preferred programming language: {programming_language}
+Available time: {available_time}
+Domain/interests: {domain or "Not specified"}
+Extra requirements: {extra_requirements or "None"}
 
-Return clear Markdown with these sections:
-1. Project title and one-line pitch
-2. Problem and target users
-3. Three ways the project stands out
-4. MVP features and optional future features
+Write the answer in clear Markdown. Include these sections:
+
+1. Project title and short description
+2. Problem statement and target users
+3. What makes the project unique
+4. Main features (separate essential MVP features from future features)
 5. Recommended technology stack with reasons
-6. User workflow
-7. Development roadmap with phases and estimated time
-8. Suggested folder/file structure in a code block
-9. First three coding tasks
+6. How the user will use the application
+7. Step-by-step development roadmap with estimated time
+8. Suggested project folder and file structure in a code block
+9. The first three coding tasks
 10. Testing checklist
-11. A 60-second presentation script
+11. A short presentation script for a university project demo
 12. Five viva questions with short answers
 
-Keep the scope achievable for the selected skill level and time.
-Prefer free tools. Do not claim code has been tested.
+Keep the scope suitable for the user's skill level and available time.
+Prefer free tools and explain technical terms simply.
+Do not claim that code has been tested or deployed.
 """
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
-            temperature=0.65,
+            temperature=0.6,
             max_output_tokens=5000,
         ),
     )
-    return response.text or "Gemini returned an empty response. Please try again."
 
+    answer = response.text
+    if not answer:
+        raise RuntimeError("Gemini returned an empty response. Please try again.")
 
-st.title("🚀 AI Project Mentor")
-st.write("Turn a rough idea into a practical project blueprint you can build and present.")
-
-with st.sidebar:
-    st.header("⚙️ Settings")
-    api_key_input = st.text_input(
-        "Gemini API key",
-        type="password",
-        placeholder="Enter your Gemini API key",
-    )
-    st.caption("You can also set GEMINI_API_KEY in Streamlit Secrets.")
-    st.markdown("[Get a Gemini API key](https://aistudio.google.com/apikey)")
-
-api_key = api_key_input.strip() or get_api_key()
-
-left_col, right_col = st.columns([1.2, 0.8])
-
-with left_col:
-    st.subheader("💡 Your project idea")
-    idea = st.text_area(
-        "What do you want to build?",
-        placeholder="Example: An app that helps students understand difficult topics...",
-        height=130,
-    )
-    interests = st.text_input(
-        "Domain or interests (optional)",
-        placeholder="Education, productivity, agriculture...",
-    )
-    extra = st.text_area(
-        "Special requirements (optional)",
-        placeholder="Example: A simple dashboard and mobile-friendly interface.",
-        height=90,
-    )
-
-with right_col:
+    return answer
