@@ -1,4 +1,5 @@
 import os
+import time
 import streamlit as st
 from google import genai
 from google.genai import types
@@ -38,12 +39,14 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Model Settings")
+    model_options = ["gemini-3.8-flash", "gemini-4-hydrogen", "gemini-3.5-flash-lite"]
     model_choice = st.selectbox(
         "Gemini Model",
-        options=["gemini-3.8-flash", "gemini-4-hydrogen", "gemini-3.5-flash-lite"],
+        options=model_options,
         index=0,
-        help="gemini-3.8-flash is fast and reliable; gemini-4-hydrogen is great for coding & agentic workflows."
+        help="If the chosen model hits high traffic (503), the app will retry and fall back automatically."
     )
+    auto_fallback = st.checkbox("Auto-fallback to another model on 503", value=True)
 
     st.markdown("---")
     st.caption("Built with Streamlit & Google GenAI SDK")
@@ -104,7 +107,29 @@ with left_col:
         submitted = st.form_submit_button("✨ Generate Project Blueprint", use_container_width=True, type="primary")
 
 
-def generate_blueprint(key, model, idea, level, p_type, stack, time, areas):
+def _call_gemini_with_retry(client, model_name, prompt, max_retries=3):
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.7,
+                )
+            )
+            return response.text, model_name
+        except Exception as e:
+            last_error = e
+            err_str = str(e)
+            is_transient = "503" in err_str or "UNAVAILABLE" in err_str or "429" in err_str
+            if not is_transient or attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)  # 1s, 2s backoff
+    raise last_error
+
+
+def generate_blueprint(key, primary_model, allow_fallback, idea, level, p_type, stack, time_limit, areas):
     client = genai.Client(api_key=key)
 
     areas_str = ", ".join(areas) if areas else "All standard architectural sections"
@@ -117,24 +142,34 @@ def generate_blueprint(key, model, idea, level, p_type, stack, time, areas):
     - **Developer Skill Level:** {level}
     - **Application Type:** {p_type}
     - **Preferred Tech Stack:** {stack if stack else "Recommend the best fit"}
-    - **Target Timeline:** {time}
+    - **Target Timeline:** {time_limit}
     - **Requested Sections:** {areas_str}
 
     **Formatting & Quality Guidelines:**
-    1. Tailor the complexity, libraries, and architectural patterns strictly to a **{level}** developer working within a **{time}** timeframe.
+    1. Tailor the complexity, libraries, and architectural patterns strictly to a **{level}** developer working within a **{time_limit}** timeframe.
     2. Use clear Markdown headings, bullet points, and text-based diagrams or file trees where helpful.
     3. Be concrete: name specific libraries, packages, APIs, and database tables rather than giving generic advice.
     4. Keep the tone encouraging, structured, and mentor-like.
     """
 
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.7,
-        )
-    )
-    return response.text
+    candidates = [primary_model]
+    if allow_fallback:
+        for m in ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-4-hydrogen"]:
+            if m not in candidates:
+                candidates.append(m)
+
+    last_exc = None
+    for idx, candidate in enumerate(candidates):
+        try:
+            return _call_gemini_with_retry(client, candidate, prompt, max_retries=3)
+        except Exception as e:
+            last_exc = e
+            err_str = str(e)
+            is_transient = "503" in err_str or "UNAVAILABLE" in err_str
+            if is_transient and idx < len(candidates) - 1:
+                continue
+            raise
+    raise last_exc
 
 
 # --- OUTPUT DISPLAY ---
@@ -143,6 +178,8 @@ with right_col:
 
     if "blueprint" not in st.session_state:
         st.session_state.blueprint = None
+    if "used_model" not in st.session_state:
+        st.session_state.used_model = None
 
     if submitted:
         if not api_key:
@@ -152,21 +189,26 @@ with right_col:
         else:
             with st.spinner(f"🧠 Architecting your project blueprint with {model_choice}..."):
                 try:
-                    result = generate_blueprint(
+                    result, model_used = generate_blueprint(
                         key=api_key,
-                        model=model_choice,
+                        primary_model=model_choice,
+                        allow_fallback=auto_fallback,
                         idea=project_idea,
                         level=skill_level,
                         p_type=project_type,
                         stack=tech_stack,
-                        time=timeline,
+                        time_limit=timeline,
                         areas=focus_areas
                     )
                     st.session_state.blueprint = result
+                    st.session_state.used_model = model_used
                 except Exception as e:
                     st.error(f"❌ Error communicating with Gemini API: {str(e)}")
 
     if st.session_state.blueprint:
+        if st.session_state.used_model:
+            st.caption(f"Generated using `{st.session_state.used_model}`")
+
         st.download_button(
             label="📥 Download Blueprint (.md)",
             data=st.session_state.blueprint,
